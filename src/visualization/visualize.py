@@ -57,7 +57,7 @@ def plot_hist_for_numerical(data, numerical_features):
     
     fig, ax = plt.subplots(num_rows, num_cols, figsize=(12, 8))  # Create a grid of subplots
 
-    # Flatten the axes array if there is only one row
+    # Flatten the axes array if there is more than one row
     if num_rows > 1:
         ax = ax.flatten()
 
@@ -84,4 +84,71 @@ def plot_hist_for_numerical(data, numerical_features):
     plt.tight_layout()
 
     # Display the figure
+    plt.show()
+
+def plot_boxplots(df, selected_data):
+
+    # Ensure selected_data is a list
+    # selected_data = [selected_data] if not isinstance(selected_data, list) else selected_data
+
+    # Calculate the number of rows and columns for subplots
+    num_rows = len(selected_data)
+    num_cols = 2
+
+    # Create a DataFrame with selected columns
+    df_selected = df[['Transported'] + selected_data]
+
+    # Create a figure with a grid of subplots
+    fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(12, 5 * num_rows))
+
+    for i, feature in enumerate(selected_data):
+        # Filter the DataFrame for each category of "Transported"
+        transported_false = df_selected[df_selected['Transported'] == False]
+        transported_true = df_selected[df_selected['Transported'] == True]
+
+        # Determine subplot position
+        row_position = i
+
+
+        if num_rows > 1:
+            # Create boxplot for "False" in "Transported" column
+            axes[row_position, 0].boxplot(
+                transported_false[transported_false[feature].notnull()][feature]
+            )
+            axes[row_position, 0].set_title(f'Boxplot of {feature} for False Transported')
+            axes[row_position, 0].set_xticklabels([''])
+            axes[row_position, 0].set_ylim([0, df_selected[feature].max() * 1.1])
+            axes[row_position, 0].set_ylabel('Values')
+
+            # Create boxplot for "True" in "Transported" column
+            axes[row_position, 1].boxplot(
+                transported_true[transported_true[feature].notnull()][feature]
+            )
+            axes[row_position, 1].set_title(f'Boxplot of {feature} for True Transported')
+            axes[row_position, 1].set_xticklabels([''])
+            axes[row_position, 1].set_ylim([0, df_selected[feature].max() * 1.1])
+            axes[row_position, 1].set_ylabel('Values')
+        else:
+            # Create boxplot for "False" in "Transported" column
+            axes[0].boxplot(
+                transported_false[transported_false[feature].notnull()][feature]
+            )
+            axes[0].set_title(f'Boxplot of {feature} for False Transported')
+            axes[0].set_xticklabels([''])
+            axes[0].set_ylim([0, df_selected[feature].max() * 1.1])
+            axes[0].set_ylabel('Values')
+
+            # Create boxplot for "True" in "Transported" column
+            axes[1].boxplot(
+                transported_true[transported_true[feature].notnull()][feature]
+            )
+            axes[1].set_title(f'Boxplot of {feature} for True Transported')
+            axes[1].set_xticklabels([''])
+            axes[1].set_ylim([0, df_selected[feature].max() * 1.1])
+            axes[1].set_ylabel('Values')
+
+    # Adjust the spacing between subplots
+    plt.tight_layout()
+
+    # Display the plots
     plt.show()
