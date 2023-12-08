@@ -1,17 +1,13 @@
 import pandas as pd
 import numpy as np
 
-# Deducing gender from name
-# import gender_guesser as gender
-import nltk
-from nltk.corpus import names
-
 # Preprocessing tools
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import RobustScaler
+from pandas.api.types import CategoricalDtype
 
 def split_cabin_column(data):
     """
@@ -59,71 +55,60 @@ def transform_passengerId_column(data):
     data['GroupSize'] = data['GroupNumber'].map(group_counts)
     return data
 
-def transform_name_column(data):
+def drop_name_column(data):
     """
-    Predicts sex from Name column and puts in new column named Sex. 
-    Uses gender_guesser for predictions. The result will be one of: 
-    unknown (name not found), andy (androgynous), male, female, 
-    mostly_male, or mostly_female. The difference between andy and unknown 
-    is that the former is found to have the same probability to be male than to be female, 
-    while the later means that the name wasn't found in the database. Citation from https://pypi.org/project/gender-guesser/.
     Drops Name column.
 
     Args:
-    data (pandas.DataFrame): DataFrame containing Name column in a specific format: First Last (str).
+    data (pandas.DataFrame): DataFrame containing Name column.
 
     Returns:
-    pandas.DataFrame: DataFrame with Name column dropped and 1 new column added (Sex).
+    pandas.DataFrame: DataFrame with Name column dropped.
     """
-    
-    # # Download the names corpus from NLTK
-    # nltk.download('names')
-
-    # # Create a DataFrame from the NLTK names corpus
-    # male_names = [(name, 'Male') for name in names.words('male.txt')]
-    # female_names = [(name, 'Female') for name in names.words('female.txt')]
-    # nltk_df = pd.DataFrame(male_names + female_names, columns=['Name', 'Gender'])
-
-    # # Convert the name to uppercase for case-insensitive matching
-    # data['First Name'] = data['Name'].str.split(" ").str[0]
-    # # data['First Name'] = data['First Name'].str.upper()
-
-    # # Merge with the NLTK names dataset
-    # merged_df = pd.merge(data, nltk_df, how='left', left_on='First Name', right_on='Name', suffixes=('_input', '_nltk'))
-
-    # # Create a new column "Sex" based on predictions from the "Name" column
-    # merged_df['Sex'] = merged_df['Gender'].fillna('Unknown')
-
-    # # Drop unnecessary columns
-    # merged_df = merged_df.drop(['Name_nltk', 'Gender'], axis=1)
-
-    # return merged_df
-
-    # for nameLastName in data['Name']:
-
-    #     name = nameLastName.str.split(" ").str[0]
-    #     # Convert the name to uppercase for case-insensitive matching
-    #     name = name.upper()
-
-    #     # Check if the name is in the dataset
-    #     if name in df['Name'].str.upper().values:
-    #         predicted_gender = df.loc[df['Name'].str.upper() == name, 'Gender'].values[0]
-    #         data['Sex'] = predicted_gender
-    #     else:
-    #         data['Sex'] = 'Unknown'
-
-
-    # # Initialize the gender detector
-    # detector = gender.Detector()
-
-    # # Name column contains the full name in the format "First Last"
-    # data['Sex'] = data['Name'].apply(lambda x: detector.get_gender(x.split()[0]))
-    
-
-
-
     # Drop the 'Name' column from the dataframe
     data.drop(columns="Name", inplace=True)
+
+    return data
+
+def sum_spending_columns(data):
+    """
+    Calculate the total spending by summing up individual spending columns. Will temporarly fill NaN in spending columns
+    to avoid NaN in SpendingTotal column. Fills median of corresponding column.
+
+    Parameters:
+    - data (pd.DataFrame): Input DataFrame containing RoomService, FoodCourt, ShoppingMall, Spa and VRDeck columns.
+
+    Returns:
+    - pd.DataFrame: DataFrame with an additional 'SpendingTotal' column representing the sum of individual spending columns.
+    """
+    # Summing up individual spending columns to get the total spending
+    # Using fillna(median) so that if one argument is NaN it will be replaced by median (equal to 0)
+    # Therefore SpendingTotal will not be NaN
+    data['SpendingTotal'] = (
+        data['RoomService'].fillna(data['RoomService'].median()) + data['FoodCourt'].fillna(data['FoodCourt'].median()) +
+        data['ShoppingMall'].fillna(data['ShoppingMall'].median()) + data['Spa'].fillna(data['Spa'].median()) + 
+        data['VRDeck'].fillna(data['VRDeck'].median())
+    )
+    
+    return data
+
+def calculate_group_spending(data):
+    """
+    Calculate total spending and average spending per group member.
+
+    Parameters:
+    - data (pd.DataFrame): Input DataFrame containing spending information.
+
+    Returns:
+    - pd.DataFrame: DataFrame with additional columns:
+        - 'GroupTotalSpending': Total spending of the group (sum of SpendingTotal for all group members).
+        - 'AvgSpendingPerMember': Average spending per group member.
+    """
+    # Calculate total spending of the group
+    data['GroupTotalSpending'] = data.groupby('GroupNumber')['SpendingTotal'].transform('sum')
+
+    # Calculate average spending per group member
+    data['AvgSpendingPerMember'] = data['GroupTotalSpending'] / data['GroupSize']
 
     return data
 
@@ -135,13 +120,86 @@ def transform_columns(data):
     data (pandas.DataFrame): DataFrame containing Name, Cabin and PassengerId column in a specific formats: 
     Name: First Last (str),
     Cabin: deck/num/side (str),
-    PassengerId: gggg_pp (str).
+    PassengerId: gggg_pp (str),
+    RoomService: (int/float - numeric),
+    FoodCourt: (int/float - numeric),
+    ShoppingMall: (int/float - numeric),
+    Spa: (int/float - numeric),
+    VRDeck: (int/float - numeric).
 
     Returns:
-    pandas.DataFrame: DataFrame with Name, Cabin and PassengerId column dropped and 4 new columns added: 
-    GroupNumber, GroupSize, Deck, Side.
+    pandas.DataFrame: DataFrame with Name, Cabin and PassengerId column dropped and 7 new columns added: 
+    GroupNumber, GroupSize, Deck, Side, SpendingTotal, GroupTotalSpending, AvgSpendingPerMember.
     """
-    transform_name_column(data)
+    drop_name_column(data)
     transform_passengerId_column(data)
     split_cabin_column(data)
+    sum_spending_columns(data)
+    calculate_group_spending(data)
+
+    return data
+
+def create_preprocessor():
+    """
+    Create a preprocessor for handling different types of features in a machine learning pipeline.
+
+    The preprocessor includes separate transformations for categorical, ordinal, numeric, and boolean features.
+    Categorical features are imputed with the most frequent value and one-hot encoded.
+    Ordinal features are imputed with the most frequent value.
+    Numeric features are imputed with the median and scaled using RobustScaler.
+    Boolean features are imputed with the most frequent value.
+
+    Returns:
+    - ColumnTransformer: Preprocessor containing separate transformers for different feature types.
+    """
+    # Define different features and transformer pipelines
+    categorical_features = ["HomePlanet", 'Destination', 'GroupNumber', 'Deck', 'Side']
+    categorical_transformer = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("onehot", OneHotEncoder(handle_unknown="ignore"))])
+
+    ordinal_features = ['GroupSize']
+    ordinal_transformer = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="most_frequent"))])
+
+    numeric_features = ["Age", 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'SpendingTotal', 'GroupTotalSpending', 'AvgSpendingPerMember']
+    numeric_transformer = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="median")), 
+    ("scaler", RobustScaler())]) # Good for handling outliers
+
+    boolean_features = ['CryoSleep', 'VIP']  # Define boolean features
+
+    # Handle missing values for boolean features
+    boolean_transformer = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="most_frequent"))])
+
+
+    # Setup preprocessing steps (fill missing values, then convert to numbers)
+    preprocessor = ColumnTransformer(
+                transformers=[
+                            ("cat", categorical_transformer, categorical_features),
+                            ("ord", ordinal_transformer, ordinal_features),
+                            ("num", numeric_transformer, numeric_features), 
+                            ("bool", boolean_transformer, boolean_features)])
+    return preprocessor
+
+def set_categorical(data):
+    """
+    Convert specified columns in a DataFrame to categorical data types.
+
+    Parameters:
+    - data (pd.DataFrame): Input DataFrame to be modified.
+
+    Returns:
+    - pd.DataFrame: DataFrame with specified columns converted to categorical data types.
+    """
+    groupsize_cat_dtype = CategoricalDtype(categories=[1, 2, 3, 4, 5, 6, 7, 8], ordered=True)
+    data['GroupSize'] = data['GroupSize'].astype(groupsize_cat_dtype)
+    data['GroupNumber'] = data['GroupNumber'].astype('category')
+    data["HomePlanet"] = data["HomePlanet"].astype("category")
+    data["CryoSleep"]= data["CryoSleep"].astype("category")
+    data["Destination"]= data["Destination"].astype("category")
+    data["VIP"]= data["VIP"].astype("category")
+    data["Deck"]= data["Deck"].astype("category")
+    data["Side"]= data["Side"].astype("category")
     return data
